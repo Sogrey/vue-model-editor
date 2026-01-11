@@ -113,7 +113,7 @@
             {{ isPlaying ? '暂停动画' : '播放动画' }}
           </button>
           <div class="animation-timeline">
-            <label>进度: {{ animationProgress.toFixed(1) }}%</label>
+            <label>进度: {{ Number(animationProgress).toFixed(1) }}%</label>
             <input
               type="range"
               v-model="animationProgress"
@@ -125,7 +125,7 @@
             />
           </div>
           <div class="animation-speed">
-            <label>速度: {{ animationSpeed.toFixed(1) }}x</label>
+            <label>速度: {{ Number(animationSpeed).toFixed(1) }}x</label>
             <input type="range" v-model="animationSpeed" min="0.1" max="3" step="0.1" />
           </div>
         </div>
