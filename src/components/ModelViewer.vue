@@ -17,12 +17,8 @@
           <label>演示模型:</label>
           <select v-model="selectedDemoModel" @change="loadDemoModel" class="model-dropdown">
             <option value="">-- 选择演示模型 --</option>
-            <option
-              v-for="model in demoModels"
-              :key="model.name"
-              :value="model.name"
-            >
-              {{ model.label }}
+            <option v-for="model in demoModels" :key="model.name" :value="model.name">
+              {{ model.label }} <span class="format-badge">{{ model.format }}</span>
             </option>
           </select>
         </div>
@@ -42,7 +38,7 @@
           </button>
           <p class="supported-formats">
             支持格式: .obj, .fbx, .gltf, .glb, .stl
-            <br>
+            <br />
             💡 提示: 拖放文件夹到画布区域也可加载
           </p>
         </div>
@@ -53,16 +49,17 @@
         <div class="scene-models-list">
           <div v-for="(model, index) in sceneModels" :key="model.id" class="model-item">
             <div class="model-item-info">
-              <span class="model-icon">🎨</span>
               <span class="model-name">{{ model.name }}</span>
             </div>
             <div class="model-item-actions">
-              <button @click="toggleModelVisibility(model)" class="visibility-btn" :title="model.visible ? '隐藏' : '显示'">
+              <button
+                @click="toggleModelVisibility(model)"
+                class="visibility-btn"
+                :title="model.visible ? '隐藏' : '显示'"
+              >
                 {{ model.visible ? '👁️' : '👁️‍🗨️' }}
               </button>
-              <button @click="removeModel(model)" class="remove-btn" title="移除模型">
-                🗑️
-              </button>
+              <button @click="removeModel(model)" class="remove-btn" title="移除模型">🗑️</button>
             </div>
           </div>
         </div>
@@ -82,12 +79,7 @@
           </div>
           <div v-if="!isTransparentBg" class="control-item">
             <label for="bg-color-picker">背景颜色</label>
-            <input
-              id="bg-color-picker"
-              type="color"
-              v-model="bgColor"
-              @change="updateBackground"
-            />
+            <input id="bg-color-picker" type="color" v-model="bgColor" @change="updateBackground" />
           </div>
         </div>
       </div>
@@ -97,9 +89,14 @@
         <div v-if="modelInfo" class="model-info">
           <p><strong>文件名:</strong> {{ modelInfo.name }}</p>
           <p><strong>格式:</strong> {{ modelInfo.format }}</p>
-          <p v-if="modelInfo.size > 0"><strong>大小:</strong> {{ formatFileSize(modelInfo.size) }}</p>
+          <p v-if="modelInfo.size > 0">
+            <strong>大小:</strong> {{ formatFileSize(modelInfo.size) }}
+          </p>
           <p v-if="modelInfo.vertices"><strong>顶点数:</strong> {{ modelInfo.vertices }}</p>
-          <p v-if="modelInfo.animations !== undefined"><strong>动画:</strong> {{ modelInfo.animations > 0 ? `${modelInfo.animations} 个` : '无' }}</p>
+          <p v-if="modelInfo.animations !== undefined">
+            <strong>动画:</strong>
+            {{ modelInfo.animations > 0 ? `${modelInfo.animations} 个` : '无' }}
+          </p>
         </div>
         <p v-else class="no-model">未加载模型</p>
       </div>
@@ -107,7 +104,11 @@
       <div class="panel-section" v-if="hasAnimations">
         <h3>动画控制</h3>
         <div class="animation-controls">
-          <button @click="toggleAnimation" class="animation-toggle-btn" :class="{ active: isPlaying }">
+          <button
+            @click="toggleAnimation"
+            class="animation-toggle-btn"
+            :class="{ active: isPlaying }"
+          >
             <span class="icon">{{ isPlaying ? '⏸️' : '▶️' }}</span>
             {{ isPlaying ? '暂停动画' : '播放动画' }}
           </button>
@@ -124,14 +125,8 @@
             />
           </div>
           <div class="animation-speed">
-            <label>速度: {{ animationSpeed.toFixed(1)}}x</label>
-            <input
-              type="range"
-              v-model="animationSpeed"
-              min="0.1"
-              max="3"
-              step="0.1"
-            />
+            <label>速度: {{ animationSpeed.toFixed(1) }}x</label>
+            <input type="range" v-model="animationSpeed" min="0.1" max="3" step="0.1" />
           </div>
         </div>
       </div>
@@ -165,12 +160,12 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 // Three.js 相关引用
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js'
-import { STLLoader } from 'three/addons/loaders/STLLoader.js'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader'
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader'
 
 // DOM 引用
 const containerRef = ref<HTMLDivElement>()
@@ -187,21 +182,23 @@ let loadingManager: THREE.LoadingManager | null = null
 let currentAnimations: THREE.AnimationClip[] = []
 let mixer: THREE.AnimationMixer | null = null
 let currentAction: THREE.AnimationAction | null = null
-let clock = new THREE.Clock()
+const clock = new THREE.Clock()
 let modelCounter = 0 // 模型计数器，用于生成唯一ID
 
 // 响应式数据
 const bgColor = ref('#1a1a1a')
 const isTransparentBg = ref(false)
-const sceneModels = ref<Array<{
-  id: number
-  name: string
-  object: THREE.Object3D
-  visible: boolean
-  animations?: THREE.AnimationClip[]
-  mixer?: THREE.AnimationMixer
-  action?: THREE.AnimationAction
-}>>([])
+const sceneModels = ref<
+  Array<{
+    id: number
+    name: string
+    object: THREE.Object3D
+    visible: boolean
+    animations?: THREE.AnimationClip[]
+    mixer?: THREE.AnimationMixer
+    action?: THREE.AnimationAction
+  }>
+>([])
 const modelInfo = ref<{
   name: string
   format: string
@@ -218,16 +215,23 @@ const animationProgress = ref(0)
 const animationSpeed = ref(1.0)
 
 // 演示模型列表
-const demoModels = ref<Array<{
-  name: string
-  label: string
-  path: string
-}>>([
+const demoModels = ref<
+  Array<{
+    name: string
+    label: string
+    path: string
+    format: string
+  }>
+>([
   {
     name: 'swimsuit-character',
     label: '🏊 3D卡通风格泳装女角色模型',
-    path: new URL('/models/3D卡通风格泳装女角色模型/8ffa716adb2643a3b9f37f22f37c6c5a.gltf', import.meta.url).href
-  }
+    path: new URL(
+      '/models/3D卡通风格泳装女角色模型/8ffa716adb2643a3b9f37f22f37c6c5a.gltf',
+      import.meta.url,
+    ).href,
+    format: '.gltf',
+  },
 ])
 
 /**
@@ -252,7 +256,7 @@ const initThree = () => {
     canvas: canvasRef.value,
     antialias: true,
     alpha: isTransparentBg.value,
-    preserveDrawingBuffer: true // 保存画布内容用于导出
+    preserveDrawingBuffer: true, // 保存画布内容用于导出
   })
   renderer.setSize(width, height)
   renderer.setPixelRatio(window.devicePixelRatio)
@@ -269,10 +273,12 @@ const initThree = () => {
   controls.target.set(0, 0, 0)
 
   // 添加网格辅助线
+  // @ts-ignore - GridHelper is available in runtime
   const gridHelper = new THREE.GridHelper(10, 10, 0x444444, 0x333333)
   scene.add(gridHelper)
 
   // 添加坐标轴辅助线
+  // @ts-ignore - AxesHelper is available in runtime
   const axesHelper = new THREE.AxesHelper(5)
   scene.add(axesHelper)
 
@@ -289,9 +295,11 @@ const initThree = () => {
 const animate = () => {
   requestAnimationFrame(animate)
 
+  // 无论是否播放，都需要获取时间差以保持时钟连续性
+  const delta = clock.getDelta()
+
   // 更新动画混合器
   if (mixer && isPlaying.value) {
-    const delta = clock.getDelta()
     mixer.update(delta * animationSpeed.value)
 
     // 更新进度
@@ -379,7 +387,9 @@ const handleDrop = async (event: DragEvent) => {
   resourceMap.value.clear()
 
   // 处理拖放的文件/文件夹
-  const entries = Array.from(items).map((item) => item.webkitGetAsEntry()).filter(Boolean) as FileSystemEntry[]
+  const entries = Array.from(items)
+    .map((item) => item.webkitGetAsEntry())
+    .filter(Boolean) as FileSystemEntry[]
 
   for (const entry of entries) {
     await processEntry(entry)
@@ -428,7 +438,7 @@ const processEntry = async (entry: FileSystemEntry, path = ''): Promise<void> =>
 const loadDemoModel = async () => {
   if (!selectedDemoModel.value) return
 
-  const selectedModel = demoModels.value.find(m => m.name === selectedDemoModel.value)
+  const selectedModel = demoModels.value.find((m) => m.name === selectedDemoModel.value)
   if (!selectedModel) return
 
   try {
@@ -440,19 +450,19 @@ const loadDemoModel = async () => {
     const modelData = {
       id: ++modelCounter,
       name: selectedModel.label,
-      object: gltf.scene.clone(),
+      object: gltf.scene,
       visible: true,
       animations: gltf.animations || [],
     }
-
-    // 立即添加到场景
-    setupModel(modelData.object)
 
     // 添加到场景模型列表
     sceneModels.value.push(modelData)
 
     // 设置为当前选中的模型
     setCurrentModel(modelData)
+
+    // 立即添加到场景（在设置当前模型之后）
+    setupModel(modelData.object)
 
     // 检查并设置动画
     if (modelData.animations.length > 0) {
@@ -470,7 +480,7 @@ const loadDemoModel = async () => {
 /**
  * 设置当前选中的模型
  */
-const setCurrentModel = (modelData: typeof sceneModels.value[0]) => {
+const setCurrentModel = (modelData: (typeof sceneModels.value)[0]) => {
   currentModel = modelData.object
   currentAnimations = modelData.animations || []
 
@@ -490,14 +500,14 @@ const setCurrentModel = (modelData: typeof sceneModels.value[0]) => {
     format: 'GLTF',
     size: 0,
     vertices,
-    animations: modelData.animations.length
+    animations: modelData.animations.length,
   }
 }
 
 /**
  * 切换模型可见性
  */
-const toggleModelVisibility = (modelData: typeof sceneModels.value[0]) => {
+const toggleModelVisibility = (modelData: (typeof sceneModels.value)[0]) => {
   modelData.visible = !modelData.visible
   modelData.object.visible = modelData.visible
 }
@@ -505,7 +515,7 @@ const toggleModelVisibility = (modelData: typeof sceneModels.value[0]) => {
 /**
  * 移除模型
  */
-const removeModel = (modelData: typeof sceneModels.value[0]) => {
+const removeModel = (modelData: (typeof sceneModels.value)[0]) => {
   console.log('移除模型:', modelData.name, modelData.id)
   console.log('模型对象 parent:', modelData.object.parent)
   console.log('场景子对象数:', scene.children.length)
@@ -539,7 +549,7 @@ const removeModel = (modelData: typeof sceneModels.value[0]) => {
   disposeModel(modelData.object)
 
   // 从列表中移除
-  const index = sceneModels.value.findIndex(m => m.id === modelData.id)
+  const index = sceneModels.value.findIndex((m) => m.id === modelData.id)
   if (index !== -1) {
     sceneModels.value.splice(index, 1)
   }
@@ -555,12 +565,16 @@ const removeModel = (modelData: typeof sceneModels.value[0]) => {
 /**
  * 设置动画
  */
-const setupAnimations = (model: THREE.Object3D, modelData?: typeof sceneModels.value[0]) => {
-  if (!currentAnimations || currentAnimations.length === 0) return
+const setupAnimations = (model: THREE.Object3D, modelData?: (typeof sceneModels.value)[0]) => {
+  // 优先使用模型数据中的动画，其次使用当前全局动画
+  const animations = modelData?.animations || currentAnimations
+  if (!animations || animations.length === 0) {
+    return
+  }
 
   // 创建动画混合器
   const newMixer = new THREE.AnimationMixer(model)
-  const clip = currentAnimations[0]
+  const clip = animations[0]
   const action = newMixer.clipAction(clip)
 
   // 设置动画为循环播放
@@ -607,6 +621,8 @@ const cleanupAnimations = () => {
  */
 const toggleAnimation = () => {
   if (!currentAction || !mixer) return
+
+  console.log('toggleAnimation called, current isPlaying:', isPlaying.value)
 
   if (isPlaying.value) {
     // 暂停
@@ -661,11 +677,7 @@ const loadModelFile = (file: File) => {
 /**
  * 根据文件类型加载模型
  */
-const loadModel = (
-  contents: ArrayBuffer | string,
-  format: string,
-  file: File
-) => {
+const loadModel = (contents: ArrayBuffer | string, format: string, file: File) => {
   if (!scene) return
 
   let vertices = 0
@@ -692,42 +704,47 @@ const loadModel = (
       const loader = new GLTFLoader(loadingManager)
 
       // 异步解析 GLTF
-      loader.parse(contents as ArrayBuffer, '', (gltf) => {
-        if (gltf.scene) {
-          modelObject = gltf.scene.clone()
-          vertices = countVertices(modelObject)
-          animations = gltf.animations || []
+      loader.parse(
+        contents as ArrayBuffer,
+        '',
+        (gltf) => {
+          if (gltf.scene) {
+            modelObject = gltf.scene
+            vertices = countVertices(modelObject)
+            animations = gltf.animations || []
 
-          // 立即添加到场景
-          setupModel(modelObject)
+            // 立即添加到场景
+            setupModel(modelObject)
 
-          // 创建模型记录
-          const modelData = {
-            id: ++modelCounter,
-            name: file.name,
-            object: modelObject,
-            visible: true,
-            animations
+            // 创建模型记录
+            const modelData = {
+              id: ++modelCounter,
+              name: file.name,
+              object: modelObject,
+              visible: true,
+              animations,
+            }
+
+            // 添加到场景模型列表
+            sceneModels.value.push(modelData)
+
+            // 设置为当前选中的模型
+            setCurrentModel(modelData)
+
+            // 检查并设置动画
+            if (animations.length > 0) {
+              setupAnimations(modelObject, modelData)
+              hasAnimations.value = true
+            } else {
+              hasAnimations.value = false
+            }
           }
-
-          // 添加到场景模型列表
-          sceneModels.value.push(modelData)
-
-          // 设置为当前选中的模型
-          setCurrentModel(modelData)
-
-          // 检查并设置动画
-          if (animations.length > 0) {
-            setupAnimations(modelObject, modelData)
-            hasAnimations.value = true
-          } else {
-            hasAnimations.value = false
-          }
-        }
-      }, (error) => {
-        console.error('GLTF 解析错误:', error)
-        alert('GLTF 模型解析失败，请检查文件是否完整')
-      })
+        },
+        (error) => {
+          console.error('GLTF 解析错误:', error)
+          alert('GLTF 模型解析失败，请检查文件是否完整')
+        },
+      )
       return
     }
     case 'obj': {
@@ -744,7 +761,7 @@ const loadModel = (
         name: file.name,
         object: modelObject,
         visible: true,
-        animations: []
+        animations: [],
       }
 
       sceneModels.value.push(modelData)
@@ -770,7 +787,7 @@ const loadModel = (
           name: file.name,
           object: modelObject,
           visible: true,
-          animations
+          animations,
         }
 
         sceneModels.value.push(modelData)
@@ -794,7 +811,7 @@ const loadModel = (
       const material = new THREE.MeshStandardMaterial({
         color: 0x606060,
         metalness: 0.1,
-        roughness: 0.5
+        roughness: 0.5,
       })
       modelObject = new THREE.Mesh(geometry, material)
       vertices = geometry.attributes.position.count
@@ -808,7 +825,7 @@ const loadModel = (
         name: file.name,
         object: modelObject,
         visible: true,
-        animations: []
+        animations: [],
       }
 
       sceneModels.value.push(modelData)
@@ -961,7 +978,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', onWindowResize)
 
   // 清理所有模型
-  sceneModels.value.forEach(modelData => {
+  sceneModels.value.forEach((modelData) => {
     scene.remove(modelData.object)
     disposeModel(modelData.object)
     if (modelData.mixer) {
@@ -1238,6 +1255,17 @@ h3 {
   padding: 8px;
 }
 
+.format-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #667eea;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+  color: white;
+}
+
 .background-controls {
   display: flex;
   flex-direction: column;
@@ -1256,13 +1284,13 @@ h3 {
   cursor: pointer;
 }
 
-.control-item input[type="checkbox"] {
+.control-item input[type='checkbox'] {
   cursor: pointer;
   width: 16px;
   height: 16px;
 }
 
-.control-item input[type="color"] {
+.control-item input[type='color'] {
   width: 40px;
   height: 28px;
   border: none;
@@ -1271,7 +1299,7 @@ h3 {
   background: none;
 }
 
-.control-item input[type="color"]:disabled {
+.control-item input[type='color']:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
@@ -1351,8 +1379,8 @@ h3 {
   color: #ccc;
 }
 
-.animation-timeline input[type="range"],
-.animation-speed input[type="range"] {
+.animation-timeline input[type='range'],
+.animation-speed input[type='range'] {
   width: 100%;
   height: 6px;
   -webkit-appearance: none;
@@ -1361,8 +1389,8 @@ h3 {
   outline: none;
 }
 
-.animation-timeline input[type="range"]::-webkit-slider-thumb,
-.animation-speed input[type="range"]::-webkit-slider-thumb {
+.animation-timeline input[type='range']::-webkit-slider-thumb,
+.animation-speed input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 16px;
   height: 16px;
@@ -1372,12 +1400,12 @@ h3 {
   transition: all 0.2s ease;
 }
 
-.animation-timeline input[type="range"]::-webkit-slider-thumb:hover,
-.animation-speed input[type="range"]::-webkit-slider-thumb:hover {
+.animation-timeline input[type='range']::-webkit-slider-thumb:hover,
+.animation-speed input[type='range']::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
 
-.animation-timeline input[type="range"]:disabled {
+.animation-timeline input[type='range']:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
