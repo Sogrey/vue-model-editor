@@ -445,6 +445,9 @@ const loadDemoModel = async () => {
       animations: gltf.animations || [],
     }
 
+    // 立即添加到场景
+    setupModel(modelData.object)
+
     // 添加到场景模型列表
     sceneModels.value.push(modelData)
 
@@ -473,15 +476,21 @@ const setCurrentModel = (modelData: typeof sceneModels.value[0]) => {
 
   const vertices = countVertices(modelData.object)
 
-  if (currentModel) {
-    setupModel(currentModel)
-    modelInfo.value = {
-      name: modelData.name,
-      format: 'GLTF',
-      size: 0,
-      vertices,
-      animations: modelData.animations.length
-    }
+  // 调整相机以适应当前模型
+  const box = new THREE.Box3().setFromObject(modelData.object)
+  const size = box.getSize(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z)
+  const cameraDistance = maxDim * 2.5
+  camera.position.set(cameraDistance, cameraDistance * 0.6, cameraDistance)
+  controls.target.set(0, 0, 0)
+  controls.update()
+
+  modelInfo.value = {
+    name: modelData.name,
+    format: 'GLTF',
+    size: 0,
+    vertices,
+    animations: modelData.animations.length
   }
 }
 
@@ -497,30 +506,49 @@ const toggleModelVisibility = (modelData: typeof sceneModels.value[0]) => {
  * 移除模型
  */
 const removeModel = (modelData: typeof sceneModels.value[0]) => {
+  console.log('移除模型:', modelData.name, modelData.id)
+  console.log('模型对象 parent:', modelData.object.parent)
+  console.log('场景子对象数:', scene.children.length)
+
   // 如果移除的是当前模型，先清理
   if (currentModel === modelData.object) {
     cleanupAnimations()
     currentModel = null
     modelInfo.value = null
     hasAnimations.value = false
+    isPlaying.value = false
+    animationProgress.value = 0
   }
 
-  // 清理模型资源
-  disposeModel(modelData.object)
-
-  // 移除动画
+  // 停止并移除动画混合器
   if (modelData.mixer) {
     modelData.mixer.stopAllAction()
     modelData.mixer = null
   }
 
-  // 从场景中移除
-  scene.remove(modelData.object)
+  // 从场景中移除模型 - 通过索引遍历查找并移除
+  // 因为 Vue Proxy 包装导致直接 remove 失效
+  for (let i = scene.children.length - 1; i >= 0; i--) {
+    if (scene.children[i].uuid === modelData.object.uuid) {
+      scene.children.splice(i, 1)
+      console.log('已从场景移除模型 (索引:', i, ')')
+    }
+  }
+
+  // 清理模型资源
+  disposeModel(modelData.object)
 
   // 从列表中移除
   const index = sceneModels.value.findIndex(m => m.id === modelData.id)
   if (index !== -1) {
     sceneModels.value.splice(index, 1)
+  }
+
+  console.log('移除后场景子对象数:', scene.children.length)
+
+  // 如果还有其他模型，选择第一个作为当前模型
+  if (sceneModels.value.length > 0 && !currentModel) {
+    setCurrentModel(sceneModels.value[0])
   }
 }
 
@@ -670,6 +698,9 @@ const loadModel = (
           vertices = countVertices(modelObject)
           animations = gltf.animations || []
 
+          // 立即添加到场景
+          setupModel(modelObject)
+
           // 创建模型记录
           const modelData = {
             id: ++modelCounter,
@@ -704,6 +735,9 @@ const loadModel = (
       modelObject = loader.parse(contents as string)
       vertices = countVertices(modelObject)
 
+      // 立即添加到场景
+      setupModel(modelObject)
+
       // 创建模型记录
       const modelData = {
         id: ++modelCounter,
@@ -726,6 +760,9 @@ const loadModel = (
         modelObject = object
         vertices = countVertices(object)
         animations = object.animations || []
+
+        // 立即添加到场景
+        setupModel(object)
 
         // 创建模型记录
         const modelData = {
@@ -762,6 +799,9 @@ const loadModel = (
       modelObject = new THREE.Mesh(geometry, material)
       vertices = geometry.attributes.position.count
 
+      // 立即添加到场景
+      setupModel(modelObject)
+
       // 创建模型记录
       const modelData = {
         id: ++modelCounter,
@@ -796,15 +836,15 @@ const setupModel = (model: THREE.Object3D) => {
   // 居中模型
   model.position.sub(center)
 
+  // 添加到场景
+  scene.add(model)
+
   // 调整相机位置
   const maxDim = Math.max(size.x, size.y, size.z)
   const cameraDistance = maxDim * 2.5
   camera.position.set(cameraDistance, cameraDistance * 0.6, cameraDistance)
   controls.target.set(0, 0, 0)
   controls.update()
-
-  // 添加到场景
-  scene.add(model)
 }
 
 /**
