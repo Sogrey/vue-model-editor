@@ -48,6 +48,26 @@
         </div>
       </div>
 
+      <div class="panel-section" v-if="sceneModels.length > 0">
+        <h3>场景模型</h3>
+        <div class="scene-models-list">
+          <div v-for="(model, index) in sceneModels" :key="model.id" class="model-item">
+            <div class="model-item-info">
+              <span class="model-icon">🎨</span>
+              <span class="model-name">{{ model.name }}</span>
+            </div>
+            <div class="model-item-actions">
+              <button @click="toggleModelVisibility(model)" class="visibility-btn" :title="model.visible ? '隐藏' : '显示'">
+                {{ model.visible ? '👁️' : '👁️‍🗨️' }}
+              </button>
+              <button @click="removeModel(model)" class="remove-btn" title="移除模型">
+                🗑️
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="panel-section">
         <h3>背景设置</h3>
         <div class="background-controls">
@@ -168,10 +188,20 @@ let currentAnimations: THREE.AnimationClip[] = []
 let mixer: THREE.AnimationMixer | null = null
 let currentAction: THREE.AnimationAction | null = null
 let clock = new THREE.Clock()
+let modelCounter = 0 // 模型计数器，用于生成唯一ID
 
 // 响应式数据
 const bgColor = ref('#1a1a1a')
 const isTransparentBg = ref(false)
+const sceneModels = ref<Array<{
+  id: number
+  name: string
+  object: THREE.Object3D
+  visible: boolean
+  animations?: THREE.AnimationClip[]
+  mixer?: THREE.AnimationMixer
+  action?: THREE.AnimationAction
+}>>([])
 const modelInfo = ref<{
   name: string
   format: string
@@ -406,37 +436,27 @@ const loadDemoModel = async () => {
     const loader = new GLTFLoader()
     const gltf = await loader.loadAsync(selectedModel.path)
 
-    // 移除之前的模型和动画
-    cleanupAnimations()
-
-    if (currentModel) {
-      scene.remove(currentModel)
-      disposeModel(currentModel)
-      currentModel = null
+    // 创建模型记录
+    const modelData = {
+      id: ++modelCounter,
+      name: selectedModel.label,
+      object: gltf.scene.clone(),
+      visible: true,
+      animations: gltf.animations || [],
     }
 
-    currentModel = gltf.scene
-    const vertices = countVertices(gltf.scene)
-    const animationCount = gltf.animations ? gltf.animations.length : 0
+    // 添加到场景模型列表
+    sceneModels.value.push(modelData)
+
+    // 设置为当前选中的模型
+    setCurrentModel(modelData)
 
     // 检查并设置动画
-    if (animationCount > 0) {
-      currentAnimations = gltf.animations
-      setupAnimations(gltf.scene)
+    if (modelData.animations.length > 0) {
+      setupAnimations(modelData.object, modelData)
       hasAnimations.value = true
     } else {
       hasAnimations.value = false
-    }
-
-    if (currentModel) {
-      setupModel(currentModel)
-      modelInfo.value = {
-        name: selectedModel.label,
-        format: 'GLTF',
-        size: 0,
-        vertices,
-        animations: animationCount
-      }
     }
   } catch (error) {
     console.error('加载演示模型失败:', error)
@@ -445,25 +465,93 @@ const loadDemoModel = async () => {
 }
 
 /**
+ * 设置当前选中的模型
+ */
+const setCurrentModel = (modelData: typeof sceneModels.value[0]) => {
+  currentModel = modelData.object
+  currentAnimations = modelData.animations || []
+
+  const vertices = countVertices(modelData.object)
+
+  if (currentModel) {
+    setupModel(currentModel)
+    modelInfo.value = {
+      name: modelData.name,
+      format: 'GLTF',
+      size: 0,
+      vertices,
+      animations: modelData.animations.length
+    }
+  }
+}
+
+/**
+ * 切换模型可见性
+ */
+const toggleModelVisibility = (modelData: typeof sceneModels.value[0]) => {
+  modelData.visible = !modelData.visible
+  modelData.object.visible = modelData.visible
+}
+
+/**
+ * 移除模型
+ */
+const removeModel = (modelData: typeof sceneModels.value[0]) => {
+  // 如果移除的是当前模型，先清理
+  if (currentModel === modelData.object) {
+    cleanupAnimations()
+    currentModel = null
+    modelInfo.value = null
+    hasAnimations.value = false
+  }
+
+  // 清理模型资源
+  disposeModel(modelData.object)
+
+  // 移除动画
+  if (modelData.mixer) {
+    modelData.mixer.stopAllAction()
+    modelData.mixer = null
+  }
+
+  // 从场景中移除
+  scene.remove(modelData.object)
+
+  // 从列表中移除
+  const index = sceneModels.value.findIndex(m => m.id === modelData.id)
+  if (index !== -1) {
+    sceneModels.value.splice(index, 1)
+  }
+}
+
+/**
  * 设置动画
  */
-const setupAnimations = (model: THREE.Object3D) => {
+const setupAnimations = (model: THREE.Object3D, modelData?: typeof sceneModels.value[0]) => {
   if (!currentAnimations || currentAnimations.length === 0) return
 
   // 创建动画混合器
-  mixer = new THREE.AnimationMixer(model)
-
-  // 获取第一个动画并播放
+  const newMixer = new THREE.AnimationMixer(model)
   const clip = currentAnimations[0]
-  currentAction = mixer.clipAction(clip)
+  const action = newMixer.clipAction(clip)
 
   // 设置动画为循环播放
-  currentAction.setLoop(THREE.LoopRepeat)
-  currentAction.clampWhenFinished = false
+  action.setLoop(THREE.LoopRepeat)
+  action.clampWhenFinished = false
 
-  // 重置状态
-  isPlaying.value = false
-  animationProgress.value = 0
+  // 如果是当前模型，更新全局状态
+  if (!modelData || currentModel === model) {
+    mixer = newMixer
+    currentAction = action
+    isPlaying.value = false
+    animationProgress.value = 0
+  }
+
+  // 存储到模型数据中
+  if (modelData) {
+    modelData.mixer = newMixer
+    modelData.action = action
+  }
 }
 
 /**
@@ -552,16 +640,9 @@ const loadModel = (
 ) => {
   if (!scene) return
 
-  // 移除之前的模型和动画
-  cleanupAnimations()
-
-  if (currentModel) {
-    scene.remove(currentModel)
-    disposeModel(currentModel)
-    currentModel = null
-  }
-
   let vertices = 0
+  let modelObject: THREE.Object3D | null = null
+  let animations: THREE.AnimationClip[] = []
 
   // 根据格式选择对应的加载器
   switch (format) {
@@ -585,28 +666,31 @@ const loadModel = (
       // 异步解析 GLTF
       loader.parse(contents as ArrayBuffer, '', (gltf) => {
         if (gltf.scene) {
-          currentModel = gltf.scene
-          vertices = countVertices(gltf.scene)
-          const animationCount = gltf.animations ? gltf.animations.length : 0
+          modelObject = gltf.scene.clone()
+          vertices = countVertices(modelObject)
+          animations = gltf.animations || []
+
+          // 创建模型记录
+          const modelData = {
+            id: ++modelCounter,
+            name: file.name,
+            object: modelObject,
+            visible: true,
+            animations
+          }
+
+          // 添加到场景模型列表
+          sceneModels.value.push(modelData)
+
+          // 设置为当前选中的模型
+          setCurrentModel(modelData)
 
           // 检查并设置动画
-          if (animationCount > 0) {
-            currentAnimations = gltf.animations
-            setupAnimations(gltf.scene)
+          if (animations.length > 0) {
+            setupAnimations(modelObject, modelData)
             hasAnimations.value = true
           } else {
             hasAnimations.value = false
-          }
-
-          if (currentModel) {
-            setupModel(currentModel)
-            modelInfo.value = {
-              name: file.name,
-              format: format.toUpperCase(),
-              size: file.size,
-              vertices,
-              animations: animationCount
-            }
           }
         }
       }, (error) => {
@@ -617,20 +701,21 @@ const loadModel = (
     }
     case 'obj': {
       const loader = new OBJLoader()
-      currentModel = loader.parse(contents as string)
-      vertices = countVertices(currentModel)
-      hasAnimations.value = false
+      modelObject = loader.parse(contents as string)
+      vertices = countVertices(modelObject)
 
-      if (currentModel) {
-        setupModel(currentModel)
-        modelInfo.value = {
-          name: file.name,
-          format: format.toUpperCase(),
-          size: file.size,
-          vertices,
-          animations: 0
-        }
+      // 创建模型记录
+      const modelData = {
+        id: ++modelCounter,
+        name: file.name,
+        object: modelObject,
+        visible: true,
+        animations: []
       }
+
+      sceneModels.value.push(modelData)
+      setCurrentModel(modelData)
+      hasAnimations.value = false
       break
     }
     case 'fbx': {
@@ -638,27 +723,30 @@ const loadModel = (
       const blob = new Blob([contents], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       loader.load(url, (object) => {
-        currentModel = object
+        modelObject = object
         vertices = countVertices(object)
-        const animationCount = object.animations ? object.animations.length : 0
+        animations = object.animations || []
+
+        // 创建模型记录
+        const modelData = {
+          id: ++modelCounter,
+          name: file.name,
+          object: modelObject,
+          visible: true,
+          animations
+        }
+
+        sceneModels.value.push(modelData)
+        setCurrentModel(modelData)
 
         // 检查并设置动画
-        if (animationCount > 0) {
-          currentAnimations = object.animations
-          setupAnimations(object)
+        if (animations.length > 0) {
+          setupAnimations(object, modelData)
           hasAnimations.value = true
         } else {
           hasAnimations.value = false
         }
 
-        setupModel(currentModel)
-        modelInfo.value = {
-          name: file.name,
-          format: format.toUpperCase(),
-          size: file.size,
-          vertices,
-          animations: animationCount
-        }
         URL.revokeObjectURL(url)
       })
       return
@@ -671,20 +759,21 @@ const loadModel = (
         metalness: 0.1,
         roughness: 0.5
       })
-      currentModel = new THREE.Mesh(geometry, material)
+      modelObject = new THREE.Mesh(geometry, material)
       vertices = geometry.attributes.position.count
-      hasAnimations.value = false
 
-      if (currentModel) {
-        setupModel(currentModel)
-        modelInfo.value = {
-          name: file.name,
-          format: format.toUpperCase(),
-          size: file.size,
-          vertices,
-          animations: 0
-        }
+      // 创建模型记录
+      const modelData = {
+        id: ++modelCounter,
+        name: file.name,
+        object: modelObject,
+        visible: true,
+        animations: []
       }
+
+      sceneModels.value.push(modelData)
+      setCurrentModel(modelData)
+      hasAnimations.value = false
       break
     }
     default:
@@ -830,6 +919,17 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', onWindowResize)
+
+  // 清理所有模型
+  sceneModels.value.forEach(modelData => {
+    scene.remove(modelData.object)
+    disposeModel(modelData.object)
+    if (modelData.mixer) {
+      modelData.mixer.stopAllAction()
+    }
+  })
+  sceneModels.value = []
+
   cleanupAnimations()
   if (currentModel) {
     disposeModel(currentModel)
@@ -993,6 +1093,93 @@ h3 {
   font-size: 14px;
   cursor: pointer;
   transition: all 0.3s ease;
+}
+
+.scene-models-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.model-item:hover {
+  background: #333;
+  border-color: #667eea;
+}
+
+.model-item-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.model-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.model-name {
+  font-size: 13px;
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.visibility-btn,
+.remove-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.visibility-btn {
+  background: #3a3a3a;
+}
+
+.visibility-btn:hover {
+  background: #4a4a4a;
+}
+
+.remove-btn {
+  background: #d32f2f;
+}
+
+.remove-btn:hover {
+  background: #e74c3c;
+}
+
+.visibility-btn:disabled,
+.remove-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .model-dropdown:hover {
