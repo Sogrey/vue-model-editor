@@ -18,7 +18,7 @@
           <select v-model="selectedDemoModel" @change="loadDemoModel" class="model-dropdown">
             <option value="">-- 选择演示模型 --</option>
             <option v-for="model in demoModels" :key="model.name" :value="model.name">
-              {{ model.label }} <span class="format-badge">{{ model.format }}</span>
+              {{ model.label }} [{{ model.format }}]
             </option>
           </select>
         </div>
@@ -164,8 +164,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader'
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader'
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader'
+import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader'
 
 // DOM 引用
 const containerRef = ref<HTMLDivElement>()
@@ -232,6 +234,30 @@ const demoModels = ref<
     ).href,
     format: '.gltf',
   },
+  {
+    name: 'robotic-arm',
+    label: '🦾 机械臂模型 (FBX)',
+    path: new URL('/models/机械臂/source/armLOW.fbx', import.meta.url).href,
+    format: '.fbx',
+  },
+  {
+    name: 'building-04-obj',
+    label: '🏢 建筑模型 (OBJ)',
+    path: new URL('/models/building/building_04.obj', import.meta.url).href,
+    format: '.obj',
+  },
+  // {
+  //   name: 'building-04-fbx',
+  //   label: '🏢 建筑模型 (FBX)',
+  //   path: new URL('/models/building/building_04.fbx', import.meta.url).href,
+  //   format: '.fbx',
+  // },
+  {
+    name: 'building-04-dae',
+    label: '🏢 建筑模型 (DAE/Collada)',
+    path: new URL('/models/building/building_04.dae', import.meta.url).href,
+    format: '.dae',
+  },
 ])
 
 /**
@@ -265,6 +291,26 @@ const initThree = () => {
   // 添加环境光
   const pmremGenerator = new THREE.PMREMGenerator(renderer)
   scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture
+
+  // 添加环境光（提供基础照明）
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+  scene.add(ambientLight)
+
+  // 添加主方向光（模拟太阳光）
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0)
+  directionalLight.position.set(5, 10, 7.5)
+  directionalLight.castShadow = true
+  scene.add(directionalLight)
+
+  // 添加补光（从侧面照亮）
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.5)
+  fillLight.position.set(-5, 5, -5)
+  scene.add(fillLight)
+
+  // 添加背光（从背后照亮，增强轮廓）
+  const backLight = new THREE.DirectionalLight(0xffffff, 0.3)
+  backLight.position.set(0, 5, -10)
+  scene.add(backLight)
 
   // 添加控制器
   controls = new OrbitControls(camera, renderer.domElement)
@@ -442,17 +488,145 @@ const loadDemoModel = async () => {
   if (!selectedModel) return
 
   try {
-    // 使用 GLTFLoader 加载演示模型
-    const loader = new GLTFLoader()
-    const gltf = await loader.loadAsync(selectedModel.path)
+    let modelData: {
+      id: number
+      name: string
+      object: THREE.Object3D
+      visible: boolean
+      animations?: THREE.AnimationClip[]
+    }
 
-    // 创建模型记录
-    const modelData = {
-      id: ++modelCounter,
-      name: selectedModel.label,
-      object: gltf.scene,
-      visible: true,
-      animations: gltf.animations || [],
+    // 根据格式选择对应的加载器
+    switch (selectedModel.format) {
+      case '.gltf':
+      case '.glb': {
+        const loader = new GLTFLoader()
+        const gltf = await loader.loadAsync(selectedModel.path)
+        modelData = {
+          id: ++modelCounter,
+          name: selectedModel.label,
+          object: gltf.scene,
+          visible: true,
+          animations: gltf.animations || [],
+        }
+        break
+      }
+      case '.fbx': {
+        // 设置 FBX 纹理路径
+        const texturePath = selectedModel.path.substring(0, selectedModel.path.lastIndexOf('/') + 1) + '../textures/'
+        const loader = new FBXLoader()
+        loader.setResourcePath(texturePath)
+        const object = await loader.loadAsync(selectedModel.path)
+        modelData = {
+          id: ++modelCounter,
+          name: selectedModel.label,
+          object: object,
+          visible: true,
+          animations: object.animations || [],
+        }
+        break
+      }
+      case '.obj': {
+        // 尝试加载 MTL 材质文件
+        const mtlPath = selectedModel.path.replace('.obj', '.mtl')
+        let object: THREE.Object3D
+
+        try {
+          // 先加载 MTL 材质
+          const mtlLoader = new MTLLoader()
+          const resourcePath = selectedModel.path.substring(0, selectedModel.path.lastIndexOf('/') + 1)
+          mtlLoader.setResourcePath(resourcePath)
+
+          const materials = await new Promise((resolve, reject) => {
+            mtlLoader.load(
+              mtlPath,
+              (mtl) => {
+                console.log('MTL 材质加载成功:', mtl)
+                mtl.preload()
+                resolve(mtl)
+              },
+              (xhr) => {
+                console.log('MTL 加载进度:', xhr.loaded, xhr.total)
+              },
+              (error) => {
+                console.log('未找到 MTL 文件，使用默认材质:', error)
+                resolve(null)
+              }
+            )
+          })
+
+          // 加载 OBJ 并应用材质
+          const objLoader = new OBJLoader()
+          if (materials) {
+            objLoader.setMaterials(materials as any)
+          }
+          object = await objLoader.loadAsync(selectedModel.path)
+          console.log('OBJ 模型加载成功:', object)
+        } catch (error) {
+          console.log('材质加载失败，使用默认材质:', error)
+          const objLoader = new OBJLoader()
+          object = await objLoader.loadAsync(selectedModel.path)
+        }
+
+        // 遍历模型并处理材质，确保响应光照
+        object.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            if (child.material) {
+              if (Array.isArray(child.material)) {
+                child.material.forEach(mat => {
+                  mat.envMap = scene.environment
+                  mat.side = THREE.DoubleSide
+                })
+              } else {
+                child.material.envMap = scene.environment
+                child.material.side = THREE.DoubleSide
+              }
+            }
+          }
+        })
+
+        modelData = {
+          id: ++modelCounter,
+          name: selectedModel.label,
+          object: object,
+          visible: true,
+          animations: [],
+        }
+        break
+      }
+      case '.stl': {
+        const loader = new STLLoader()
+        const geometry = await loader.loadAsync(selectedModel.path)
+        const material = new THREE.MeshStandardMaterial({
+          color: 0x606060,
+          metalness: 0.1,
+          roughness: 0.5,
+        })
+        const mesh = new THREE.Mesh(geometry, material)
+        modelData = {
+          id: ++modelCounter,
+          name: selectedModel.label,
+          object: mesh,
+          visible: true,
+          animations: [],
+        }
+        break
+      }
+      case '.dae': {
+        const loader = new ColladaLoader()
+        const collada = await loader.loadAsync(selectedModel.path)
+        modelData = {
+          id: ++modelCounter,
+          name: selectedModel.label,
+          object: collada.scene,
+          visible: true,
+          animations: collada.animations || [],
+        }
+        break
+      }
+      default:
+        alert('不支持的文件格式')
+        return
     }
 
     // 添加到场景模型列表
@@ -465,7 +639,7 @@ const loadDemoModel = async () => {
     setupModel(modelData.object)
 
     // 检查并设置动画
-    if (modelData.animations.length > 0) {
+    if (modelData.animations && modelData.animations.length > 0) {
       setupAnimations(modelData.object, modelData)
       hasAnimations.value = true
     } else {
@@ -844,6 +1018,39 @@ const loadModel = (contents: ArrayBuffer | string, format: string, file: File) =
  */
 const setupModel = (model: THREE.Object3D) => {
   if (!scene) return
+
+  console.log('setupModel 开始处理材质...')
+
+  // 处理材质 - 确保模型有正确的光照响应
+  let meshCount = 0
+  model.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      meshCount++
+      console.log('发现 Mesh:', child.name, '材质:', child.material)
+
+      // 确保材质使用 StandardMaterial 以响应光照
+      if (child.material) {
+        // 如果材质数组，遍历处理
+        if (Array.isArray(child.material)) {
+          child.material.forEach((mat, idx) => {
+            console.log(`材质数组[${idx}]:`, mat)
+            mat.side = THREE.DoubleSide
+            if (!mat.envMap && scene.environment) {
+              mat.envMap = scene.environment
+              console.log('已设置 envMap')
+            }
+          })
+        } else {
+          child.material.side = THREE.DoubleSide
+          if (!child.material.envMap && scene.environment) {
+            child.material.envMap = scene.environment
+            console.log('已设置 envMap')
+          }
+        }
+      }
+    }
+  })
+  console.log(`共处理了 ${meshCount} 个 Mesh`)
 
   // 计算模型包围盒
   const box = new THREE.Box3().setFromObject(model)
